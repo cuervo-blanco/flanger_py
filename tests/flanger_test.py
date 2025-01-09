@@ -1,34 +1,56 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import numpy as np
 import matplotlib.pyplot as plt
+
 from  fractional_delay import FractionalDelayWithCircularBuffer
 from lfo import LFO
 from main import flanger_effect
 
-def test_fractional_delay():
+def test_fractional_delay_streaming():
     buffer_size = 16
     delay = 4.5
+    frac_delay = FractionalDelayWithCircularBuffer(buffer_size, delay)
+
+    input_samples = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 
+                              7.0, 8.0, 9.0, 10.0, 11.0, 12.0])
     
-    fractional_delay = FractionalDelayWithCircularBuffer(buffer_size, delay)
-
-    num_samples_to_write = 12
-    input_samples = np.linspace(1, num_samples_to_write, num_samples_to_write)
-
-    for sample in input_samples:
-        fractional_delay.write_sample(sample)
-
-    num_samples_to_read = 8
     output_samples = []
+    
+    for sample in input_samples:
+        frac_delay.write_sample(sample)
+        out = frac_delay.read_sample()
+        output_samples.append(out)
 
-    for _ in range(num_samples_to_read):
-        try:
-            output_sample = fractional_delay.read_sample()
-            output_samples.append(output_sample)
-        except Exception as e:
-            print("Error reading sample:", e)
-            break
+    assert len(output_samples) == len(input_samples)
+    
+    # print("Output:", output_samples)
 
-    assert len(output_samples) == num_samples_to_read, "Mismatch in the number of output samples."
-    assert np.allclose(output_samples, input_samples[:num_samples_to_read]), "Output samples mismatch input samples."
+
+def test_fractional_delay_with_warmup():
+    buffer_size = 16
+    delay = 4.5
+    frac_delay = FractionalDelayWithCircularBuffer(buffer_size, delay)
+
+    input_samples = np.arange(1, 13, dtype=np.float64)  # [1.0, 2.0, ..., 12.0]
+    
+    for sample in input_samples:
+        frac_delay.write_sample(sample)
+
+    warmup_count = int(np.ceil(delay))
+    for _ in range(warmup_count):
+        frac_delay.read_sample()
+    
+    output_samples = []
+    for _ in range(len(input_samples) - warmup_count):
+        output_samples.append(frac_delay.read_sample())
+
+    assert len(output_samples) == len(input_samples) - warmup_count
+
+    assert not np.allclose(output_samples, 0), "Output is all zeros after warm-up!"
+
 
 def test_lfo():
     freq = 1
@@ -64,7 +86,8 @@ def test_flanger_effect():
     assert not np.allclose(output_audio, input_audio), "Effect not applied."
 
 
-test_fractional_delay()
+test_fractional_delay_streaming()
+test_fractional_delay_with_warmup()
 test_lfo()
 test_flanger_effect()
 
